@@ -6,6 +6,7 @@ import com.dcauto.front_story_task.entities.RevenueReport;
 import com.dcauto.front_story_task.exception.DataNotFoundException;
 import com.dcauto.front_story_task.exception.DataProcessingException;
 import com.dcauto.front_story_task.repo.CostReportRepository;
+import com.dcauto.front_story_task.repo.CsvDataLoader;
 import com.dcauto.front_story_task.repo.RevenueReportRepository;
 import com.dcauto.front_story_task.service.ReportProcessor;
 import com.dcauto.front_story_task.service.ReportService;
@@ -17,12 +18,12 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.time.ZonedDateTime;
 import java.util.*;
 
 @Service
 @AllArgsConstructor
 public class ReportServiceImpl implements ReportService {
+
 
     @Autowired
     private CostReportRepository costReportRepository;
@@ -30,17 +31,23 @@ public class ReportServiceImpl implements ReportService {
     private RevenueReportRepository revenueReportRepository;
     @Autowired
     private ReportProcessor reportProcessor;
+    @Autowired
+    private CsvDataLoader csvDataLoader;
 
     @Override
     public List<ReportDto> getAggregatedReport(LocalDate dateFrom, LocalDate dateTo) {
-        LocalDateTime start = dateFrom.atStartOfDay();
-        LocalDateTime end = dateTo.plusDays(1).atStartOfDay();
+        // Загрузка данных по необходимости
+        csvDataLoader.loadCostData();
+        csvDataLoader.loadRevenueData();
+
+        LocalDateTime start = convertToUTC(dateFrom.atStartOfDay());
+        LocalDateTime end = convertToUTC(dateTo.plusDays(1).atStartOfDay());
 
         List<CostReport> costReports = costReportRepository.findByTimestampBetween(start, end);
         List<RevenueReport> revenueReports = revenueReportRepository.findByTimestampBetween(start, end);
 
         if (costReports.isEmpty() && revenueReports.isEmpty()) {
-            throw new DataNotFoundException("No data found for the given date range.");
+            throw new DataNotFoundException("No data found for the specified period.");
         }
 
         try {
@@ -62,7 +69,6 @@ public class ReportServiceImpl implements ReportService {
             reportDto.setTotalRoi(calculateROI(reportDto.getTotalRevenue(), reportDto.getTotalCost()));
             reportDto.setTotalProfit(calculateProfit(reportDto.getTotalRevenue(), reportDto.getTotalCost()));
             reportDto.setUv(calculateUV(reportDto.getTotalRevenue(), reportDto.getTotalClicks()));
-
         }
 
         return new ArrayList<>(reportMap.values());
@@ -89,12 +95,9 @@ public class ReportServiceImpl implements ReportService {
     }
 
     @Override
-    public LocalDateTime convertToUTC(LocalDateTime estDateTime) {
-        try {
-            ZonedDateTime estZonedDateTime = estDateTime.atZone(ZoneId.of("America/New_York"));
-            return estZonedDateTime.withZoneSameInstant(ZoneId.of("UTC")).toLocalDateTime();
-        } catch (Exception ex) {
-            throw new DataProcessingException("Error converting time zone: " + ex.getMessage());
-        }
+    public LocalDateTime convertToUTC(LocalDateTime localDateTime) {
+        return localDateTime.atZone(ZoneId.of("America/New_York"))
+                .withZoneSameInstant(ZoneId.of("UTC"))
+                .toLocalDateTime();
     }
 }

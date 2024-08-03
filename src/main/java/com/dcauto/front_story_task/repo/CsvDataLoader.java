@@ -2,66 +2,80 @@ package com.dcauto.front_story_task.repo;
 
 import com.dcauto.front_story_task.entities.CostReport;
 import com.dcauto.front_story_task.entities.RevenueReport;
-import org.apache.commons.csv.CSVFormat;
-import org.apache.commons.csv.CSVParser;
-import org.apache.commons.csv.CSVRecord;
-import org.springframework.stereotype.Component;
-
 import jakarta.annotation.PostConstruct;
-import java.io.FileReader;
+import org.apache.commons.csv.CSVFormat;
+import org.apache.commons.csv.CSVRecord;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+
 import java.io.IOException;
-import java.io.Reader;
+import java.io.StringReader;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
+import java.time.format.DateTimeFormatter;
 
-@Component
+@Service
 public class CsvDataLoader {
 
+    private static final String COST_URL = "https://s3.amazonaws.com/frontstory-test-data/server-side/cost_1.csv";
+    private static final String REVENUE_URL = "https://s3.amazonaws.com/frontstory-test-data/server-side/revenue_1.csv";
+    private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("M/d/yy H:mm");
+
+    @Autowired
+    private CostReportRepository costReportRepository;
+
+    @Autowired
+    private RevenueReportRepository revenueReportRepository;
+
     @PostConstruct
-    public void loadData() throws IOException {
+    public void loadData() {
         loadCostData();
         loadRevenueData();
     }
 
-    private void loadCostData() throws IOException {
-        List<CostReport> costReports = new ArrayList<>();
-        try (Reader reader = new FileReader("path/to/cost_report.csv");
-             CSVParser csvParser = new CSVParser(reader, CSVFormat.DEFAULT
-                     .withHeader("timestamp", "campaign_id", "campaign_name", "clicks", "cost")
-                     .withIgnoreHeaderCase()
-                     .withTrim())) {
-
-            for (CSVRecord csvRecord : csvParser) {
+    public void loadCostData() {
+        String data = fetchData(COST_URL);
+        try {
+            Iterable<CSVRecord> records = CSVFormat.DEFAULT
+                    .withFirstRecordAsHeader()
+                    .parse(new StringReader(data));
+            for (CSVRecord record : records) {
                 CostReport costReport = new CostReport();
-                costReport.setTimestamp(LocalDateTime.parse(csvRecord.get("timestamp")));
-                costReport.setCampaignId(csvRecord.get("campaign_id"));
-                costReport.setCampaignName(csvRecord.get("campaign_name"));
-                costReport.setClicks(Integer.parseInt(csvRecord.get("clicks")));
-                costReport.setCost(new BigDecimal(csvRecord.get("cost")));
-                costReports.add(costReport);
+                costReport.setCampaignId(record.get("campaign_id"));
+                costReport.setCampaignName(record.get("campaign_name"));
+                costReport.setTimestamp(LocalDateTime.parse(record.get("data_date"), DATE_TIME_FORMATTER));
+                costReport.setCost(new BigDecimal(record.get("cost")));
+                costReport.setClicks(Integer.parseInt(record.get("clicks")));
+                costReportRepository.save(costReport);
             }
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 
-    private void loadRevenueData() throws IOException {
-        List<RevenueReport> revenueReports = new ArrayList<>();
-        try (Reader reader = new FileReader("path/to/revenue_report.csv");
-             CSVParser csvParser = new CSVParser(reader, CSVFormat.DEFAULT
-                     .withHeader("timestamp", "campaign_id", "campaign_name", "clicks", "revenue")
-                     .withIgnoreHeaderCase()
-                     .withTrim())) {
-
-            for (CSVRecord csvRecord : csvParser) {
+    public void loadRevenueData() {
+        String data = fetchData(REVENUE_URL);
+        try {
+            Iterable<CSVRecord> records = CSVFormat.DEFAULT
+                    .withFirstRecordAsHeader()
+                    .parse(new StringReader(data));
+            for (CSVRecord record : records) {
                 RevenueReport revenueReport = new RevenueReport();
-                revenueReport.setTimestamp(LocalDateTime.parse(csvRecord.get("timestamp")));
-                revenueReport.setCampaignId(csvRecord.get("campaign_id"));
-                revenueReport.setCampaignName(csvRecord.get("campaign_name"));
-                revenueReport.setClicks(Integer.parseInt(csvRecord.get("clicks")));
-                revenueReport.setRevenue(new BigDecimal(csvRecord.get("revenue")));
-                revenueReports.add(revenueReport);
+                revenueReport.setCampaignId(record.get("campaign_id"));
+                revenueReport.setCampaignName(record.get("campaign_name"));
+                revenueReport.setTimestamp(LocalDateTime.parse(record.get("data_date"), DATE_TIME_FORMATTER));
+                revenueReport.setRevenue(new BigDecimal(record.get("revenue")));
+                revenueReport.setClicks(Integer.parseInt(record.get("clicks")));
+                revenueReportRepository.save(revenueReport);
             }
+        } catch (IOException e) {
+            e.printStackTrace();
         }
+    }
+
+    private String fetchData(String url) {
+        RestTemplate restTemplate = new RestTemplate();
+        return restTemplate.getForObject(url, String.class);
     }
 }
